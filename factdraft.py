@@ -2,6 +2,7 @@
 
 from pyzotero import zotero as zotero
 import cPickle as pickle
+import ConfigParser
 import json
 import codecs
 import re
@@ -12,15 +13,16 @@ import pprint
 from subprocess import call, Popen
 from docx import Document
 
-myid = '2298807'
-mytype = 'user'
-mykey = 'wt6qS66XtMnUvNxHvOH8GAAi'
-mystyle_name = 'trends-in-biotechnology'
-#mystyle_name = 'plos-genetics'
-#mycollection_id = 'KWDHV4ZX'
-#mycollection_id = 'UM4K5KW6' #testing purposes
 NOTEPATH = './draftw_notes'
 DECKPATH = './draftw_decks'
+
+def parse_config(config_file):
+    config = ConfigParser.ConfigParser()
+    config.read(config_file)
+    zotero_id = config.get('default','ZOTERO_ID')
+    zotero_key = config.get('default','ZOTERO_KEY')
+    zotero_type = config.get('default','ZOTERO_TYPE')
+    return zotero_id, zotero_type, zotero_key
 
 def request_login_info():
     uid = raw_input("\nWhat is your Zotero API ID? ")
