@@ -1,20 +1,26 @@
 #!/usr/bin/env python
 
-from pyzotero import zotero as zotero
+# from pyzotero import zotero as zotero
 import cPickle as pickle
 import ConfigParser
 import json
-import codecs
 import re
 import os
 import sys
 import tempfile
-import pprint
+import pybtex
+import pybtex.database
+from Tkinter import *
+from ttk import *
 from subprocess import call, Popen
-from docx import Document
+# from docx import Document
 
 NOTEPATH = './draftw_notes'
 DECKPATH = './draftw_decks'
+
+################
+# Zotero Stuff #
+################
 
 def parse_config(config_file):
     config = ConfigParser.ConfigParser()
@@ -28,8 +34,7 @@ def request_login_info():
     uid = raw_input("\nWhat is your Zotero API ID? ")
     ktype = raw_input("\nAre you a user or a group? ")
     apikey = raw_input("\nWhat is your Zotero API key? ")
-    info = [uid, ktype, apikey]
-    return info
+    return uid, ktype, apikey
 
 def get_coll_key_from_name(zot):
     #get the key of a collection from its name
@@ -51,24 +56,6 @@ def request_style_info():
 def login(login_info):
     return zotero.Zotero(login_info[0], login_info[1], login_info[2])
 
-def save_obj(obj, filename):
-    with open(filename, 'wb') as out:
-        pickle.dump(obj,out,-1)
-
-def load_obj(filename):
-    with open(filename, 'rb') as input:
-        return pickle.load(input)
-
-# def get_collections(zot):
-#     for collection in zot.collections():
-
-
-
-# class Notecard:
-#     def __init__(self, note=''):
-#         self.note = note
-#         self.source =
-
 def cleanup_html(html_string, i):
     #trends-in-biotechnology is broken so i need to clean up the xml.
     #while we're at it, let's add numbering to the sources.
@@ -79,6 +66,7 @@ def cleanup_html(html_string, i):
     numbered = re.sub(r'\d\d' + unichr(8211) + r'.+\(','(',numbered) 
     return numbered
 
+#No idea what this is for, but seems to do with making docx from zotero?
 def find_itallics(str_with_itallics):
     #find itallics and break up the string
     first_split = str_with_itallics.split('<i>')
@@ -112,16 +100,6 @@ def get_bibliography_items(zot, itemIDs, style = None):
         cleaned_html += (cleanup_html(item, items.index(item) + 1))
     return cleaned_html
 
-def open_in_editor(filename):
-    EDITOR = os.environ.get('EDITOR','vim')
-    call([EDITOR, filename])
-
-# def open_temp_file(zot, itemID):
-#     with tempfile.NamedTemporaryFile(suffix=".pdf") as tfile:
-#         tfile.write(zot.file(itemID))
-#         tfile.flush()
-#         Popen(['google-chrome', tfile.name],shell=False,stdin=None,stdout=None,stderr=None,close_fds=True)
-
 def get_items_from_collection(zot, collectionID):
     items = zot.collection_items(collectionID)
     return items
@@ -143,6 +121,22 @@ def open_notes_and_files(zot, all_items):
             output = '>/dev/null'
             call(['google-chrome', tfile.name])
             open_in_editor(fname)
+
+####################
+# End Zotero Stuff #
+####################
+
+def open_in_editor(filename):
+    EDITOR = os.environ.get('EDITOR','vim')
+    call([EDITOR, filename])
+
+# def open_temp_file(zot, itemID):
+#     with tempfile.NamedTemporaryFile(suffix=".pdf") as tfile:
+#         tfile.write(zot.file(itemID))
+#         tfile.flush()
+#         Popen(['google-chrome', tfile.name],shell=False,stdin=None,stdout=None,stderr=None,close_fds=True)
+
+
 
 def parse_notes():
     #parses every note and returns a dictionary with each heading,
@@ -243,30 +237,82 @@ def clobber_content_dict(content_dict, desired_order_list):
     clobbered += '\n'
     return clobbered
 
+def cat_bibs(bib1, bib2):
+    entries1 = bib1.entries
+    entries2 = bib2.entries
+    newbib = dict(entries1)
+    newbib.update(entries2)
+    return pybtex.database.BibliographyData(newbib)
+
+def write_bibdb(bibdb, dbpath = "~", name = '.factdraftdb'):
+    fullpath = os.path.join(os.path.expanduser(dbpath),name)
+    bibdb.to_file(fullpath, "bibtex")
+
+def read_bibdb(dbpath = "~", name = '.factdraftdb'):
+    fullpath = os.path.join(os.path.expanduser(dbpath),name)
+    pybtex.database.parse_file(fullpath)
+
 def main():
     #Login
-    zot = login(login_info = [myid, mytype, mykey])
+    # zot = login(login_info = [myid, mytype, mykey])
+
+    #initialize  tkinter
+    tkloop = Tk()
+    tkloop.title("Factdraft")
+    rootframe = Frame(tkloop)
+    rootframe.pack(fill=BOTH)
+
+    #add menu bar
+    menubar = Menu(rootframe)
+    filemenu = Menu(menubar, tearoff=0)
+    filemenu.add_command(label="Exit",command=tkloop.quit)
+    menubar.add_cascade(label="File",menu=filemenu)
+    tkloop.config(menu=menubar)
+
+    #add notebook
+    notebook = Notebook(rootframe)
+    notebook.pack(fill=BOTH)
+
+    #construct "facts" notebook tab
+    facts_frame = Frame(notebook)
+    Label(facts_frame, text="these are facts").pack(side=LEFT)
+    notebook.add(facts_frame, text = "Facts")
+
+    # ...
+
+    #construct "drafts" notebook tab
+    drafts_frame = Frame(notebook)
+    Label(drafts_frame, text="these are drafts").pack(side=LEFT)
+    notebook.add(drafts_frame, text = "Drafts")
+    # ...
 
 
-    #Create notes
-    items = get_items_from_collection(zot, get_coll_key_from_name(zot))
-    open_notes_and_files(zot,items)
+    #initialize bibdb
+    # bibdb = read_bibdb()
 
-    #Create decks
-    note_contents = parse_notes()
-    create_decks(note_contents)
-    rearrange_within_decks()
+    #add to bibdb and rewrite every time a new ref is added
+    rootframe.mainloop()
 
-    #Order decks
-    desired_order = reorder_decks()
-    content_dict = parse_decks(desired_order)
-    unique_item_ids = get_unique_refs_from_dict(content_dict, desired_order)
-    add_numbered_endings(content_dict, unique_item_ids)
-    draft_content = clobber_content_dict(content_dict, desired_order)
-    with open('draftw_out.txt','wb') as f:
-        f.write(draft_content)
-    bibliography_text = get_bibliography_items(zot, unique_item_ids, style=mystyle_name)
-    make_bibliography_docx("references.docx",bibliography_text)
+    # Old code
+    # #Create notes
+    # items = get_items_from_collection(zot, get_coll_key_from_name(zot))
+    # open_notes_and_files(zot,items)
+
+    # #Create decks
+    # note_contents = parse_notes()
+    # create_decks(note_contents)
+    # rearrange_within_decks()
+
+    # #Order decks
+    # desired_order = reorder_decks()
+    # content_dict = parse_decks(desired_order)
+    # unique_item_ids = get_unique_refs_from_dict(content_dict, desired_order)
+    # add_numbered_endings(content_dict, unique_item_ids)
+    # draft_content = clobber_content_dict(content_dict, desired_order)
+    # with open('draftw_out.txt','wb') as f:
+    #     f.write(draft_content)
+    # bibliography_text = get_bibliography_items(zot, unique_item_ids, style=mystyle_name)
+    # make_bibliography_docx("references.docx",bibliography_text)
 
 if __name__ == "__main__":
     main()
